@@ -108,7 +108,7 @@ impl PartialOrd for Password {
 impl From<String> for Password {
     fn from(word: String) -> Self {
         Password {
-	        words: vec!(word.clone()),
+            words: vec!(word.clone()),
             metadata: Metadata::from(word)
         }
     }
@@ -122,15 +122,15 @@ pub struct Best<T> {
 
 impl Best<Password> {
     /// Binds password from the left or right end.
-	pub fn bind(&mut self, end: &End) -> &mut Self {
-	    self.p.metadata.bind(end);
-	    self
-	}
+    pub fn bind(&mut self, end: &End) -> &mut Self {
+        self.p.metadata.bind(end);
+        self
+    }
 
     /// Returns if password is binded from the left or right end.
-	pub fn is_binded(&self, end: &End) -> bool {
-	    self.p.metadata.is_binded(end)
-	}
+    pub fn is_binded(&self, end: &End) -> bool {
+        self.p.metadata.is_binded(end)
+    }
 }
 
 /// Arithmetics for `Best<Password>`.
@@ -195,8 +195,8 @@ impl TryFrom<&Path> for Best<Passwords> {
                 let mut count = 1;
                 for word in BufReader::new(words).lines() {
                     match word {
-                    	Ok(w) => {
-                    	    let ws = w.as_str();
+                        Ok(w) => {
+                            let ws = w.as_str();
 
                             if filter.is_match(w.as_str())
                             && ws != "oooo" && ws != "mmmm" && ws != "xxx"
@@ -205,9 +205,9 @@ impl TryFrom<&Path> for Best<Passwords> {
                             {
                                 passwords.push(&Password::from(w));
                             }
-                    	},
-                    	Err(e) => {
-                    	    println!("Could not load word!\n{e}");
+                        },
+                        Err(e) => {
+                            println!("Could not load word!\n{e}");
                             break;
                         }
                     }
@@ -319,7 +319,7 @@ impl Best<Passwords> {
 
     /// Drains passwords that does not match our goal.
     pub fn filter_by_length(&mut self, g: &Goal) -> &mut Self {
-   	    let drained =
+        let drained =
             self.p.drain_filter(
                 |t, best| {
                     let is_too_long  = t.length > g.max_length;
@@ -342,7 +342,7 @@ impl Best<Passwords> {
  
     /// Drains passwords that costs more than `max`.
     pub fn filter_by_cost(&mut self, max: u16) -> &mut Self {
-   	    let drained =
+        let drained =
             self.p.drain_filter(
                 |_, best| best.p.metadata.cost > max
             ).count();
@@ -386,7 +386,7 @@ impl Best<Passwords> {
                 println!("\n* Making {i}-word passwords:\n");
                 acc = acc + &center;
  
-          	    acc.filter(g, max_cost);
+                acc.filter(g, max_cost);
             }
 
             println!("\n* Making {}-word passwords (+right binded):\n", g.words_number);
