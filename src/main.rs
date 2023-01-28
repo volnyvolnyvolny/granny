@@ -25,7 +25,7 @@ fn main() {
     match Best::<Passwords>::try_from(words) {
         Ok(passwords) => {
             let sample_size = 100;
-            let max_cost = 100;
+            let max_cost = 200;
 
             println!("\n> Taking a random sample: {sample_size} of the 1-word best passwords.");
 

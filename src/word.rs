@@ -1,14 +1,14 @@
 use crate::key::*;
 
 /// Represents `word` start or end.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum End {
 	Left,
 	Right
 }
 
 /// Represents `word type`. 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Type {
     pub first_key: Key,
     pub last_key: Key,
@@ -17,7 +17,7 @@ pub struct Type {
 
 /// Represents metadata for a word.
 /// Contains `Type` and `cost`.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Metadata {
 	pub t: Type,
 	pub cost: Distance
