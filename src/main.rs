@@ -24,17 +24,22 @@ fn main() {
 
     match Best::<Passwords>::try_from(words) {
         Ok(passwords) => {
-            let sample = passwords.get_sample(40 /*sample size*/);
-            let best = sample.find_best(&g, 110 /*max_cost*/);
+            let sample_size = 100;
+            let max_cost = 100;
+
+            println!("\n> Taking a random sample: {sample_size} of the 1-word best passwords.");
+
+            let sample = passwords.get_sample(sample_size);
+            let mut best = sample.find_best(&g, max_cost);
 
             let max_cost = best.p.metadata.cost;
-            println!("\nFound the best password for a random sample: {:?}.", best.p.words.join("|"));
+            println!("\n= The best password for a sample: {:?} (len: {}, cost: {}).", best.p.words.join("|"), best.p.metadata.t.length, best.p.metadata.cost);
 
+            println!("> Searching for the passwords that are cheaper then {max_cost} on the whole data.\n");
 
-            println!("Searching for the passwords that are cheaper then {max_cost} on the whole data.\n");
-
-            //using it to drain_filter full data:
-            println!("Found best password for the full dictionary!\n{:?}", passwords.find_best(&g, max_cost));
+            // using it to filter full data:
+            best = passwords.find_best(&g, max_cost);
+            println!("= The best password for the full dictionary!\n{:?} (len: {}, cost: {}).", best.p.words.join("|"), best.p.metadata.t.length, best.p.metadata.cost);
        },
 
         Err(e) =>

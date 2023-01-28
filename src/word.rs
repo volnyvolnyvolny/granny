@@ -1,7 +1,14 @@
 use crate::key::*;
 
+/// Represents `word` start or end.
+#[derive(Clone, Debug)]
+pub enum End {
+	Left,
+	Right
+}
+
 /// Represents `word type`. 
-#[derive(Hash, Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Type {
     pub first_key: Key,
     pub last_key: Key,
@@ -10,10 +17,30 @@ pub struct Type {
 
 /// Represents metadata for a word.
 /// Contains `Type` and `cost`.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Metadata {
 	pub t: Type,
 	pub cost: Distance
+}
+
+impl Metadata {
+    /// Binds metadata from the left or right end.
+	pub fn bind(&mut self, end: &End) -> &mut Self {
+        match end {
+            End::Left => self.t.first_key = '*',
+            End::Right => self.t.last_key = '*'
+        }
+
+        self
+	}
+	
+    /// Returns if metadata is binded from the left or right end.
+	pub fn is_binded(&self, end: &End) -> bool {
+	    match end {
+	    	End::Left => self.t.first_key == '*',
+	    	End::Right => self.t.last_key == '*'
+	    }
+	}
 }
 
 ///Calculates `word` cost.

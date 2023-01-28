@@ -1,6 +1,8 @@
 use rand::seq::SliceRandom;
 
 use crate::word::*;
+use crate::word::End;
+use crate::word::End::*;
 
 use regex::Regex;
 
@@ -15,24 +17,6 @@ use std::path::Path;
 use std::io::{BufRead, BufReader};
 
 use std::cmp::Ordering;
-use std::cmp::Ordering::*;
-
-/// Represents *password*.
-///
-/// Passwords `metadata` contains `t: Type{ first_key, last_key, length }` and `cost`.
-///
-/// For two passwords having the same type we should choose the cheapest one.
-///
-/// # Example
-///
-/// ````
-/// Password { words: vec!["granny".to_string()], metadata: Metadata{ t: Type{ first_key: 'G', last_key: 'Y', length: 6 }, cost: 14 } }
-/// ````
-#[derive(Clone, Debug)]
-pub struct Password {
-    pub words: Vec<String>,
-    pub metadata: Metadata
-}
 
 /// Represents *search goal*.
 /// Defaults to `4` words, `20-24` symbols password.
@@ -53,9 +37,21 @@ impl Default for Goal {
     }
 }
 
-pub enum End {
-	Left,
-	Right
+/// Represents *password*.
+///
+/// Passwords `metadata` contains `t: Type{ first_key, last_key, length }` and `cost`.
+///
+/// For two passwords having the same type we should choose the cheapest one.
+///
+/// # Example
+///
+/// ````
+/// Password { words: vec!["granny".to_string()], metadata: Metadata{ t: Type{ first_key: 'G', last_key: 'Y', length: 6 }, cost: 14 } }
+/// ````
+#[derive(Clone,Debug)]
+pub struct Password {
+    pub words: Vec<String>,
+    pub metadata: Metadata
 }
 
 /// Simple arithmetic on passwords.
@@ -70,18 +66,18 @@ pub enum End {
 /// Password { words: vec!("granny".to_string(), "panties".to_string()), metadata: Metadata{ t: Type{ first_key: 'G', last_key: 'S', length: 13 }, cost: 47 } }
 /// ````
 impl Add for Password {
-    type Output = Password;
+    type Output = Self;
 
-    fn add(self, other: Password) -> Password {
-        let combination = [
+    fn add(self, other: Self) -> Self {
+        let sum = [
                 self.words.as_slice(),
                 other.words.as_slice()
             ].concat();
 
-        let joined = combination.join("");
+        let joined = sum.join("");
 
         Password {
-            words: combination,
+            words: sum,
             metadata: Metadata::from(joined)
         }
     }
@@ -118,14 +114,70 @@ impl From<String> for Password {
     }
 }
 
-/// Wrapper to compose `Best<Password>`, `Best<Passwords>` and `Best<PasswordsLevel>` types.
+/// Wrapper to compose `Best<Password>` and `Best<Passwords>`.
 #[derive(Clone, Debug)]
 pub struct Best<T> {
     pub p : T
 }
 
+impl Best<Password> {
+    /// Binds password from the left or right end.
+	pub fn bind(&mut self, end: &End) -> &mut Self {
+	    self.p.metadata.bind(end);
+	    self
+	}
+
+    /// Returns if password is binded from the left or right end.
+	pub fn is_binded(&self, end: &End) -> bool {
+	    self.p.metadata.is_binded(end)
+	}
+}
+
+/// Arithmetics for `Best<Password>`.
+impl Add for Best<Password> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let sum = self.p.clone() + other.p.clone();
+    
+        let mut sum = Best{ p: sum };
+
+        if self.is_binded(&End::Left) {
+            sum.bind(&Left);
+        }
+
+        if other.is_binded(&End::Right) {
+            sum.bind(&Right);
+        }
+
+        sum
+    }
+}
+
+/// Comparing `Best<Password>` and `Best<Password>`
+impl PartialEq for Best<Password> {
+    fn eq(&self, other: &Self) -> bool {
+        self == &other.p
+     && self.p.metadata == other.p.metadata
+    }
+}
+
+/// Comparing `Best<Password>` and `Password`
+impl PartialEq<Password> for Best<Password> {
+    fn eq(&self, other: &Password) -> bool {
+        &self.p == other
+    }
+}
+
+/// Comparing `Best<Password>` and `Password`
+impl PartialOrd<Password> for Best<Password> {
+    fn partial_cmp(&self, other: &Password) -> Option<Ordering> {
+        self.p.partial_cmp(other)
+    }
+}
+
 /// `HashMap` that stores passwords with the same amount of words.
-pub type Passwords = HashMap<Type, Password>;
+pub type Passwords = HashMap<Type, Best<Password>>;
 
 impl TryFrom<&Path> for Best<Passwords> {
     type Error = String;
@@ -144,7 +196,13 @@ impl TryFrom<&Path> for Best<Passwords> {
                 for word in BufReader::new(words).lines() {
                     match word {
                     	Ok(w) => {
-                            if filter.is_match(w.as_str()) {
+                            if filter.is_match(w.as_str())
+                            && w.as_str() != "oooo"
+                            && w.as_str() != "mmmm"
+                            && w.as_str() != "xxx"
+                            && w.as_str() != "eer"
+                            && w.as_str() != "dedd"
+                             {
                                 passwords.add(&Password::from(w));
                             }
                     	},
@@ -166,68 +224,89 @@ impl TryFrom<&Path> for Best<Passwords> {
     }
 }
 
+// /// Arithmetics for `Best<Password>`.
+// impl Add<&Best<Passwords>> for Best<Passwords> {
+    // type Output = Self;
+// 
+    // /// Concatenates best passwords from one hash with
+    // /// best password of another hash.
+    // fn add(self, other: &Self) -> Self {
+        // println!("[Mult] Concatenating {} and {} passwords.", self.p.len(), other.p.len());
+// 
+        // let mut passwords = Best{ p: Passwords::new() };
+// 
+        // for p in self.p.values() {
+            // for bp in other.p.values() {
+                // let combined = p.clone() + bp.clone();
+// 
+                // passwords.add(&combined.p);
+            // }
+        // }
+// 
+        // println!("[Mult] Got {} passwords.", passwords.p.len());
+        // passwords
+    // }
+// }
+
 impl Best<Passwords> {
-    /// Inserts password `p` into the hash.
-    fn insert(&mut self, p: &Password) -> &mut Self {
-        let t = &p.metadata.t;
-        self.p.insert(t.clone(), p.clone());
+    /// Inserts `winner` password into the hash.
+    fn insert_winner(&mut self, w: &Password) -> &mut Self {
+        let t = &w.metadata.t;
+        self.p.insert(t.clone(), Best{ p: w.clone() });
         self
     }
 
     /// Loads contendering password into the hash.
-    /// If it's better than existing one
+    /// If it is cheaper than existing one
     /// -- make a replace.
     pub fn add(&mut self, c: &Password) -> &mut Self {
         let t = &c.metadata.t;
 
         match self.p.get(t) {
             None =>
-                self.insert(c),
+                self.insert_winner(c),
 
-            Some(p) =>
-                if p.partial_cmp(c) == Some(Greater) {
+            Some(bp) =>
+                if bp <= c {
                     self
                 } else {
-                    self.insert(c)
+                    self.insert_winner(c)
                 }
         }
     }
 
-    /// Concatenates best passwords from one hash with
-    /// best password of another hash.
+    // /// Concatenates best passwords from one hash with
+    // /// best password of another hash.
     pub fn mult(&self, other: &Self) -> Self {
-        println!("[Mult] Multiplying {} and {} passwords.", self.p.len(), other.p.len());
+        println!("[Concat]\tConcatenating {} and {} passwords.", self.p.len(), other.p.len());
     
         let mut passwords = Best{ p: Passwords::new() };
 
         for p in self.p.values() {
-            for bp in other.p.values() {               
-                let combined_password = p.clone() + bp.clone();
+            for bp in other.p.values() {
+                let combined = p.clone() + bp.clone();
 
-                passwords.add(&combined_password);
+                passwords.add(&combined.p);
             }
         }
 
-        println!("[Mult] Got {} passwords.", passwords.p.len());
+        println!("[Concat]\tGot {} passwords.", passwords.p.len());
         passwords
     }
 
-    /// Binds best passwords from the left or right side.
-    pub fn bind(&self, from: &End) -> Self {
+    /// Binds best passwords from the left or right end.
+    pub fn bind(&self, end: &End) -> Self {
         let mut passwords = Best{ p: Passwords::new() };
 
         for p in self.p.values() {
-            let mut p = p.clone();
+            let mut b = p.clone();
 
-            match from {
-                End::Left => p.metadata.t.first_key = '*',
-                End::Right => p.metadata.t.last_key = '*'
-            }
+            b.bind(end);
 
-            passwords.add(&p);
+            passwords.add(&b.p);
         }
 
-        println!("[Bind] Got {} passwords.", passwords.p.len());
+        println!("[Bind {:?}]\tGot {} passwords.", end, passwords.p.len());
         passwords
     }
 
@@ -250,8 +329,8 @@ impl Best<Passwords> {
             all_keys
             .choose_multiple(&mut rand::thread_rng(), n.into());
 
-        for k in keys {
-        	sample.insert(&self.p[k]);
+        for t in keys {
+        	sample.insert_winner(&self.p[t].p);
         }
 
         sample
@@ -261,11 +340,11 @@ impl Best<Passwords> {
     pub fn filter_by_length(&mut self, g: &Goal) -> &mut Self {
    	    let drained =
             self.p.drain_filter(
-                |t, p| {
+                |t, best| {
                     let is_too_long  = t.length > g.max_length;
                     let is_too_small = t.length < g.min_length;
 
-                    if p.words.len() as u8 == g.words_number {
+                    if best.p.words.len() as u8 == g.words_number {
                         is_too_long || is_too_small
                     } else {
                         is_too_long
@@ -274,7 +353,7 @@ impl Best<Passwords> {
             ).count();
 
         if drained > 0 {
-            println!("[Filter] Dropped {drained} passwords (too long or too small).");
+            println!("[Filter]\tDropped {drained} passwords (too long or too small).");
         }
 
         self
@@ -284,11 +363,11 @@ impl Best<Passwords> {
     pub fn filter_by_cost(&mut self, max: u16) -> &mut Self {
    	    let drained =
             self.p.drain_filter(
-                |_, p| p.metadata.cost >= max
+                |_, best| best.p.metadata.cost > max
             ).count();
 
         if drained > 0 {
-            println!("[Filter] Dropped {drained} passwords (too expensive).");
+            println!("[Filter]\tDropped {drained} passwords (expensive).");
         }
 
         self
@@ -304,32 +383,40 @@ impl Best<Passwords> {
     pub fn best(&self) -> Best<Password> {
         self.p
             .values()
-            .min_by(|p1, p2| p1.metadata.cost.cmp(&p2.metadata.cost))
-            .map(|password| Best{ p: password.clone() })
-            .expect("The hash is empty!")
+            .min_by(|b1, b2| b1.p.metadata.cost.cmp(&b2.p.metadata.cost))
+//            .map(|best| best.p )
+            .expect("The hash is empty!").clone()
     }
 
     /// Returns the best password.
     pub fn find_best(&self, g: &Goal, max_cost: u16) -> Best<Password> {
-        let mut center = self.clone();
-        center.filter(g, max_cost);
+        println!("\n* Making 1-word passwords (=left binded):\n");
 
         let mut left  = self.bind(&End::Left);  //passwords that starts with any ('*') key
-        let mut right = self.bind(&End::Right); //passwords that ends with any key
-
         left.filter(g, max_cost);
-        right.filter(g, max_cost);
 
-        let mut acc = left.mult(&center);
-        acc.filter(g, max_cost);
+        let mut acc = left;
 
-        for _ in 2 .. g.words_number {
-          	acc = acc.mult(&center);
+        if g.words_number >= 2 {
+            let mut center = self.clone();
+            center.filter(g, max_cost);
 
-          	acc.filter(g, max_cost);
+            for i in 2..g.words_number {
+                println!("\n* Making {i}-word passwords:\n");
+                acc = acc.mult(&center);
+ 
+          	    acc.filter(g, max_cost);
+            }
+
+            println!("\n* Making {}-word passwords (+right binded):\n", g.words_number);
+            let mut right = self.bind(&End::Right); //passwords that ends with any key
+            right.filter(g, max_cost);
+
+            acc = acc.mult(&right);
         }
 
-        acc.mult(&right).best()
+        acc.filter(g, max_cost);
+        acc.best()
     }
 }
 
@@ -355,6 +442,14 @@ mod tests {
         assert_eq!(
           g + p,
           Password { metadata: Metadata{ t: Type{ first_key: 'G', last_key: 'S', length: 13 }, cost: 47 }, words: vec!("granny".to_string(), "panties".to_string()) }
+        );
+
+        let zack = Password { metadata: Metadata{ t: Type{ first_key: 'Z', last_key: 'K', length: 4}, cost: 10 }, words: vec!("zack".to_string()) };
+        let miri = Password { metadata: Metadata{ t: Type{ first_key: 'M', last_key: 'I', length: 4}, cost: 11 }, words: vec!("miri".to_string()) };
+
+        assert_eq!(
+          zack + miri,
+          Password { metadata: Metadata{ t: Type{ first_key: 'M', last_key: 'I', length: 8}, cost: 22 }, words: vec!("zack".to_string(), "miri".to_string()) }
         );
     }
 }
