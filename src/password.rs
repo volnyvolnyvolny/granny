@@ -53,6 +53,11 @@ impl Default for Goal {
     }
 }
 
+pub enum End {
+	Left,
+	Right
+}
+
 /// Simple arithmetic on passwords.
 ///
 /// # Examples
@@ -114,37 +119,33 @@ impl From<String> for Password {
 }
 
 /// Wrapper to compose `Best<Password>`, `Best<Passwords>` and `Best<PasswordsLevel>` types.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Best<T> {
     pub p : T
 }
 
 /// `HashMap` that stores passwords with the same amount of words.
-pub type PasswordsLevel = HashMap<Type, Password>;
-
-/// `HashMap` that stores all passwords.
-pub type Passwords = HashMap<u8, PasswordsLevel>;
+pub type Passwords = HashMap<Type, Password>;
 
 impl TryFrom<&Path> for Best<Passwords> {
     type Error = String;
 
-    /// Loads dictionary (`words`) on the first level of the `Best<Passwords>`.
-    /// We separate `4666550` words to `7177` groups (by type) and
-    /// put them on the first level.
+    /// Loads dictionary (`words`) to form `Best<Passwords>` hash.
+    /// For example, we use `466 550` english words to form `7177` best 1-word
+    /// passwords (by type).
     fn try_from(words: &Path) -> Result<Self, Self::Error> {
         match File::open(words) {
             Ok(words) => {
                 let mut passwords = Best{p : Passwords::new()};
-                let mut level = Best{ p: PasswordsLevel::new() };
 
-                let filter = Regex::new(r"^[a-z0-9]{2,20}$").unwrap();
+                let filter = Regex::new(r"^[a-z0-9]{3,20}$").unwrap();
 
                 let mut count = 1;
                 for word in BufReader::new(words).lines() {
                     match word {
                     	Ok(w) => {
                             if filter.is_match(w.as_str()) {
-                                level.add(&Password::from(w));
+                                passwords.add(&Password::from(w));
                             }
                     	},
                     	Err(e) => {
@@ -157,8 +158,6 @@ impl TryFrom<&Path> for Best<Passwords> {
 
                 println!("Loaded {count} words.");
 
-                passwords.p.insert(1, level.p);
-
                 Ok(passwords)
             },
 
@@ -167,19 +166,21 @@ impl TryFrom<&Path> for Best<Passwords> {
     }
 }
 
-impl Best<PasswordsLevel> {
-    /// Inserts password `p` into the *level*.
+impl Best<Passwords> {
+    /// Inserts password `p` into the hash.
     fn insert(&mut self, p: &Password) -> &mut Self {
         let t = &p.metadata.t;
         self.p.insert(t.clone(), p.clone());
         self
     }
 
-    /// Loads contendering password into the *level*.
+    /// Loads contendering password into the hash.
+    /// If it's better than existing one
+    /// -- make a replace.
     pub fn add(&mut self, c: &Password) -> &mut Self {
         let t = &c.metadata.t;
 
-        match self.p.get(t) { //TODO: Rewrite.
+        match self.p.get(t) {
             None =>
                 self.insert(c),
 
@@ -192,6 +193,44 @@ impl Best<PasswordsLevel> {
         }
     }
 
+    /// Concatenates best passwords from one hash with
+    /// best password of another hash.
+    pub fn mult(&self, other: &Self) -> Self {
+        println!("[Mult] Multiplying {} and {} passwords.", self.p.len(), other.p.len());
+    
+        let mut passwords = Best{ p: Passwords::new() };
+
+        for p in self.p.values() {
+            for bp in other.p.values() {               
+                let combined_password = p.clone() + bp.clone();
+
+                passwords.add(&combined_password);
+            }
+        }
+
+        println!("[Mult] Got {} passwords.", passwords.p.len());
+        passwords
+    }
+
+    /// Binds best passwords from the left or right side.
+    pub fn bind(&self, from: &End) -> Self {
+        let mut passwords = Best{ p: Passwords::new() };
+
+        for p in self.p.values() {
+            let mut p = p.clone();
+
+            match from {
+                End::Left => p.metadata.t.first_key = '*',
+                End::Right => p.metadata.t.last_key = '*'
+            }
+
+            passwords.add(&p);
+        }
+
+        println!("[Bind] Got {} passwords.", passwords.p.len());
+        passwords
+    }
+
     /// Randomly picks `n` (best) passwords and returns
     /// the new hash with them.
     pub fn get_sample(&self, n: u16) -> Self {
@@ -199,7 +238,7 @@ impl Best<PasswordsLevel> {
             panic!("Cannot return sample from an empty HashMap.");
         }
 
-        let mut sample = Best{ p: PasswordsLevel::new() };
+        let mut sample = Best{ p: Passwords::new() };
 
         let all_keys : Vec<_> =
             self.p
@@ -217,121 +256,80 @@ impl Best<PasswordsLevel> {
 
         sample
     }
-}
 
-impl Best<Passwords> {
     /// Drains passwords that does not match our goal.
-    pub fn drain_filter(&mut self, g: &Goal) -> &mut Self {
-        for (l, ps) in self.p.iter_mut() {
-       	    let drained =
-        	    if l == &g.words_number {
-                    ps.drain_filter(
-                        |t, _p| t.length < g.min_length || t.length > g.max_length
-                    ).count()
-        	    } else {
-                    ps.drain_filter(
-                        |t, _p| t.length > g.max_length
-                    ).count()
-                };
+    pub fn filter_by_length(&mut self, g: &Goal) -> &mut Self {
+   	    let drained =
+            self.p.drain_filter(
+                |t, p| {
+                    let is_too_long  = t.length > g.max_length;
+                    let is_too_small = t.length < g.min_length;
 
-            if drained > 0 {
-                println!("Drained {drained} passwords with {l} words (too long or too small).");
-             }
+                    if p.words.len() as u8 == g.words_number {
+                        is_too_long || is_too_small
+                    } else {
+                        is_too_long
+                    }
+                }
+            ).count();
+
+        if drained > 0 {
+            println!("[Filter] Dropped {drained} passwords (too long or too small).");
+        }
+
+        self
+    }
+ 
+    /// Drains passwords that costs more than `max`.
+    pub fn filter_by_cost(&mut self, max: u16) -> &mut Self {
+   	    let drained =
+            self.p.drain_filter(
+                |_, p| p.metadata.cost >= max
+            ).count();
+
+        if drained > 0 {
+            println!("[Filter] Dropped {drained} passwords (too expensive).");
         }
 
         self
     }
 
-    /// Drains passwords that costs more than `max_cost`.
-    pub fn drain_filter_expensive(&mut self, max_cost: u16) -> &mut Self {
-        for (l, ps) in self.p.iter_mut() {
-       	    let drained =
-                 ps.drain_filter(
-                     |_, p| p.metadata.cost >= max_cost
-                 ).count();
-
-            if drained > 0 {
-                println!("Drained {drained} passwords with {l} words (too expensive).");
-            }
-        }
-
-        self
+    /// Drains passwords that costs more than `max` or does not match our goal.
+    pub fn filter(&mut self, g: &Goal, max_cost: u16) -> &mut Self {
+        self.filter_by_cost(max_cost)
+            .filter_by_length(g)
     }
 
-    /// Randomly picks `n` (best) passwords and returns
-    /// the new hash with them.
-    pub fn get_sample(&self, n: u16) -> Self {  
-        if self.p.is_empty() {
-            panic!("Cannot return sample from an empty HashMap.");
-        }
-
-        let first_level = Best{ p: self.p[&1].clone() };
-        let mut sample = Best{ p: Passwords::new() };
-
-        sample.p.insert(1, first_level.get_sample(n).p);
-        sample
-    }
-
-    /// Concatenates all best passwords with `n` words with
-    /// the password `p`. Propagates results to the
-    /// `n + p.words.len()` level.
-    ///
-    /// Fills the `number1 + n2` `BestPasswords` level with concatenation
-    /// of passwords from `number1` and `n2` levels.
-    ///
-    /// Passwords on `n` level are combination of `n` words.
-    pub fn cross_levels(&mut self, number1: u8, n2: u8) -> &mut Self {
-        if number1 == n2 {
-            println!("Crossing {} {number1}-word passwords.", self.p[&number1].len());
-        }
-
-        let mut passwords = Best{ p: PasswordsLevel::new() };
-
-        // Yes, it's O(n^2) :'(
-        // We can do parallelization here.
-        for p in self.p[&number1].values() {
-            for bp in self.p[&n2].values() {
-                let combined_password = p.clone() + bp.clone();
-
-                passwords.add(&combined_password);
-            }
-        }
-
-        println!("Got {} {}-word passwords.", passwords.p.len(), number1 + n2);
-
-        self.p.insert(number1 + n2, passwords.p);
-        self
-    }
-
-    /// Returns best `n` words passwords.
-    fn best(&self, n: u8) -> Best<Password> {
+    /// Returns the best of the best password.
+    pub fn best(&self) -> Best<Password> {
         self.p
-        .get(&n) //level n
-        .and_then(
-            |passwords| passwords
-                        .values()
-                        .min_by(|p1, p2| p1.metadata.cost.cmp(&p2.metadata.cost))
-        )
-        .map(|password| Best{ p: password.clone() })
-        .expect("The hash is empty!")
+            .values()
+            .min_by(|p1, p2| p1.metadata.cost.cmp(&p2.metadata.cost))
+            .map(|password| Best{ p: password.clone() })
+            .expect("The hash is empty!")
     }
 
-    /// Returns one best password.
-    /// Calculates straightly.
-    pub fn find_best(&mut self, g: &Goal, max_cost: u16) -> Best<Password> {   
-        if g.words_number == 4 {
-            self
-            .drain_filter_expensive(max_cost)
-            .cross_levels(1, /*and*/ 1)
-            .drain_filter(g)
-            .drain_filter_expensive(max_cost)
-            .cross_levels(2, /*and*/ 2)
-            .drain_filter(g)
-            .drain_filter_expensive(max_cost)
-            .best(g.words_number)
-         } else {
-         	panic!("Only 4-word passwords are supported at the moment")
-         }
+    /// Returns the best password.
+    pub fn find_best(&self, g: &Goal, max_cost: u16) -> Best<Password> {
+        let mut center = self.clone();
+        center.filter(g, max_cost);
+
+        let mut left  = self.bind(&End::Left);  //passwords that starts with any ('*') key
+        let mut right = self.bind(&End::Right); //passwords that ends with any key
+
+        left.filter(g, max_cost);
+        right.filter(g, max_cost);
+
+        let mut acc = left.mult(&center);
+        acc.filter(g, max_cost);
+
+        for _ in 2 .. g.words_number {
+          	acc = acc.mult(&center);
+
+          	acc.filter(g, max_cost);
+        }
+
+        acc.mult(&right).best()
     }
 }
 

@@ -23,17 +23,19 @@ fn main() {
     let g = Goal::default();
 
     match Best::<Passwords>::try_from(words) {
-        Ok(mut passwords) => {
-            let mut sample = passwords.get_sample(40 /*sample size*/);
-            let bp = sample.find_best(&g, 110 /*max_cost*/);
+        Ok(passwords) => {
+            let sample = passwords.get_sample(40 /*sample size*/);
+            let best = sample.find_best(&g, 110 /*max_cost*/);
 
-            println!("Found best password for a random sample: {:?}.", bp.p.words.join("|"));
-            println!("Searching for the passwords that are cheaper then {} on the whole data.", bp.p.metadata.cost);
+            let max_cost = best.p.metadata.cost;
+            println!("\nFound the best password for a random sample: {:?}.", best.p.words.join("|"));
+
+
+            println!("Searching for the passwords that are cheaper then {max_cost} on the whole data.\n");
 
             //using it to drain_filter full data:
-            let result = passwords.find_best(&g, 80/*bp.p.metadata.cost*/);
-            println!("Found best password for the full dictionary!\n{:?}", result);
-        },
+            println!("Found best password for the full dictionary!\n{:?}", passwords.find_best(&g, max_cost));
+       },
 
         Err(e) =>
             panic!("{e}")
